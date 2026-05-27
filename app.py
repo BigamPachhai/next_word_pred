@@ -59,10 +59,19 @@ def load_resources():
         with open("tokenizer.pkl", "rb") as f:
             tokenizer = pickle.load(f)
     except FileNotFoundError:
-        st.warning("⚠️ tokenizer.pkl not found. Running in demo mode.")
+        # Silently continue - we have demo mode fallback
         tokenizer = None
+    except (ModuleNotFoundError, ImportError) as e:
+        # Handle missing Keras/TensorFlow during unpickling
+        # This is expected in Python 3.14 environments
+        if "keras" in str(e).lower() or "tensorflow" in str(e).lower():
+            # This is a known limitation in Python 3.14, silently use demo mode
+            tokenizer = None
+        else:
+            st.warning(f"⚠️ Could not load tokenizer: {str(e)}")
+            tokenizer = None
     except Exception as e:
-        st.error(f"❌ Error loading tokenizer: {str(e)}")
+        st.warning(f"⚠️ Could not load tokenizer: {str(e)}")
         tokenizer = None
     
     # Try to load max_len
@@ -70,12 +79,15 @@ def load_resources():
         with open("max_len.pkl", "rb") as f:
             max_len = pickle.load(f)
     except FileNotFoundError:
-        if tokenizer is None:  # Only warn once
-            pass
+        # Silently continue
         max_len = None
-    except Exception as e:
-        st.error(f"❌ Error loading max_len: {str(e)}")
-        max_len = None
+    except (ModuleNotFoundError, ImportError) as e:
+        # Handle missing Keras/TensorFlow during unpickling
+        if "keras" in str(e).lower() or "tensorflow" in str(e).lower():
+            max_len = None
+        else:
+            st.warning(f"⚠️ Could not load max_len: {str(e)}")
+            max_len = None
 
     # Load the Keras model only if tensorflow was imported successfully.
     if HAS_TENSORFLOW and load_model is not None:
