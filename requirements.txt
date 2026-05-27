@@ -1,0 +1,7 @@
+streamlit
+numpy
+pillow
+# TensorFlow main package is large; on many systems use the cpu build
+tensorflow-cpu>=2.15.0
+# If you have GPU support and appropriate drivers, you can use:
+# tensorflow>=2.15.0
