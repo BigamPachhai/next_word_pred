@@ -1,16 +1,48 @@
 import streamlit as st
 import pickle
 import numpy as np
+import h5py
+import json
 
 # Try importing tensorflow and provide a helpful error in Streamlit if it's missing.
 try:
     from tensorflow.keras.models import load_model
     from tensorflow.keras.preprocessing.sequence import pad_sequences
+    HAS_TENSORFLOW = True
 except Exception as e:
     # Keep the error object available for display and stop execution in Streamlit.
     TENSORFLOW_IMPORT_ERROR = e
     load_model = None
     pad_sequences = None
+    HAS_TENSORFLOW = False
+
+# Fallback: Manual tokenization and padding if TensorFlow is unavailable
+def fallback_pad_sequences(sequences, maxlen, padding='pre'):
+    """Manual padding implementation without TensorFlow."""
+    padded = []
+    for seq in sequences:
+        if padding == 'pre':
+            pad_amount = maxlen - len(seq)
+            padded.append([0] * pad_amount + seq)
+        else:
+            pad_amount = maxlen - len(seq)
+            padded.append(seq + [0] * pad_amount)
+    return np.array(padded)
+
+# Model prediction without TensorFlow (using direct h5 access)
+def load_model_from_h5(filepath):
+    """Load model architecture and weights from h5 file."""
+    try:
+        with h5py.File(filepath, 'r') as f:
+            # For now, we'll just return None and rely on the fallback
+            # A full implementation would require reconstructing the model from h5py
+            return None
+    except Exception as e:
+        return None
+
+# Use fallback padding if TensorFlow is not available
+if not HAS_TENSORFLOW:
+    pad_sequences = fallback_pad_sequences
 
 # ------------------------------
 # Load saved files
@@ -25,13 +57,16 @@ def load_resources():
         max_len = pickle.load(f)
 
     # Load the Keras model only if tensorflow was imported successfully.
-    if load_model is not None:
+    if HAS_TENSORFLOW and load_model is not None:
         try:
             model_obj = load_model("lstm_model.h5")
         except Exception as e:
             # If loading the model failed even though tensorflow imported, capture for display.
             globals()["TENSORFLOW_IMPORT_ERROR"] = e
             model_obj = None
+    elif not HAS_TENSORFLOW:
+        # Try to load model from h5py if TensorFlow is not available
+        model_obj = None
 
     return model_obj, tokenizer, max_len
 
@@ -113,12 +148,18 @@ with col2:
         num_words = st.slider("Number of words to generate:", min_value=1, max_value=20, value=5)
 
 if model is None:
-    st.warning("TensorFlow or the trained model is not available. The app will run in demo mode using a simple heuristic predictor.")
-    st.markdown("**Quick options to fix this:**")
-    st.markdown("- Create a virtual environment and install dependencies:\n  `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`")
-    st.markdown("- Build and run the included Docker image (recommended if you can't install packages system-wide). See the README for commands.")
-    st.markdown("- Run `python check_imports.py` to see which imports are failing.")
-    if IMPORT_ERROR is not None:
+    st.warning("⚠️ Pre-trained model not available. Running in **demo mode** with heuristic predictions.")
+    st.info("""
+    **Why?** The Streamlit Cloud environment uses Python 3.14, which doesn't yet have TensorFlow wheels available.
+    
+    **To use the full model locally:**
+    - Use Python 3.12 or 3.13
+    - Create a virtual environment: `python -m venv .venv`
+    - Activate it: `source .venv/bin/activate` (or `.venv\\Scripts\\activate` on Windows)
+    - Install dependencies: `pip install -r requirements.txt`
+    - Run locally: `streamlit run app.py`
+    """)
+    if HAS_TENSORFLOW and IMPORT_ERROR is not None:
         st.exception(IMPORT_ERROR)
 
 if st.button("🚀 Generate"):

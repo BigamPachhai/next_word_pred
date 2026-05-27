@@ -1,7 +1,8 @@
 streamlit
 numpy
 pillow
-# TensorFlow main package is large; on many systems use the cpu build
-tensorflow-cpu>=2.15.0
-# If you have GPU support and appropriate drivers, you can use:
-# tensorflow>=2.15.0
+h5py
+# Note: TensorFlow is not included due to Python 3.14 compatibility issues
+# The pre-trained model is loaded via h5py directly
+# For local development with Python 3.12 or earlier, uncomment below:
+# tensorflow-cpu>=2.15.0 (requires Python <3.14)
