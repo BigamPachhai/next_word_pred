@@ -51,10 +51,31 @@ if not HAS_TENSORFLOW:
 def load_resources():
     # Always load tokenizer and max_len since they don't require TensorFlow.
     model_obj = None
-    with open("tokenizer.pkl", "rb") as f:
-        tokenizer = pickle.load(f)
-    with open("max_len.pkl", "rb") as f:
-        max_len = pickle.load(f)
+    tokenizer = None
+    max_len = None
+    
+    # Try to load tokenizer
+    try:
+        with open("tokenizer.pkl", "rb") as f:
+            tokenizer = pickle.load(f)
+    except FileNotFoundError:
+        st.warning("⚠️ tokenizer.pkl not found. Running in demo mode.")
+        tokenizer = None
+    except Exception as e:
+        st.error(f"❌ Error loading tokenizer: {str(e)}")
+        tokenizer = None
+    
+    # Try to load max_len
+    try:
+        with open("max_len.pkl", "rb") as f:
+            max_len = pickle.load(f)
+    except FileNotFoundError:
+        if tokenizer is None:  # Only warn once
+            pass
+        max_len = None
+    except Exception as e:
+        st.error(f"❌ Error loading max_len: {str(e)}")
+        max_len = None
 
     # Load the Keras model only if tensorflow was imported successfully.
     if HAS_TENSORFLOW and load_model is not None:
@@ -72,46 +93,50 @@ def load_resources():
 
 try:
     model, tokenizer, max_len = load_resources()
-except RuntimeError as e:
-    # If TensorFlow is missing or failed to import, surface a friendly message in the UI
-    model = tokenizer = max_len = None
-    IMPORT_ERROR = globals().get("TENSORFLOW_IMPORT_ERROR") or e
+except Exception as e:
+    # Catch any other exceptions
+    model = None
+    tokenizer = None
+    max_len = None
+    IMPORT_ERROR = str(e)
 
 # ------------------------------
 # Prediction functions
 # ------------------------------
 def predict_next_word(text):
     """Predict the next single word given input text."""
-    # If the model is available, use it.
-    if model is not None:
-        sequence = tokenizer.texts_to_sequences([text])[0]
-        sequence = pad_sequences([sequence], maxlen=max_len-1, padding='pre')
+    # If the model and tokenizer are available, use them
+    if model is not None and tokenizer is not None and max_len is not None:
+        try:
+            sequence = tokenizer.texts_to_sequences([text])[0]
+            sequence = pad_sequences([sequence], maxlen=max_len-1, padding='pre')
 
-        preds = model.predict(sequence, verbose=0)
-        predicted_index = np.argmax(preds)
+            preds = model.predict(sequence, verbose=0)
+            predicted_index = np.argmax(preds)
 
-        for word, index in tokenizer.word_index.items():
-            if index == predicted_index:
-                return word
-        return ""
+            for word, index in tokenizer.word_index.items():
+                if index == predicted_index:
+                    return word
+            return ""
+        except Exception as e:
+            return ""
 
-    # Fallback heuristic when TensorFlow/model isn't available: return the most frequent word
-    # from the tokenizer (a simple demo mode). If tokenizer doesn't have counts, return a common word.
-    try:
-        if hasattr(tokenizer, "word_counts") and tokenizer.word_counts:
-            # tokenizer.word_counts is an ordered dict of word -> count
-            # pick the word with the highest count
-            top_word = max(tokenizer.word_counts.items(), key=lambda kv: kv[1])[0]
-            return top_word
-    except Exception:
-        pass
+    # Fallback heuristic when model/tokenizer isn't available: return the most frequent word
+    if tokenizer is not None:
+        try:
+            if hasattr(tokenizer, "word_counts") and tokenizer.word_counts:
+                # tokenizer.word_counts is an ordered dict of word -> count
+                # pick the word with the highest count
+                top_word = max(tokenizer.word_counts.items(), key=lambda kv: kv[1])[0]
+                return top_word
+        except Exception:
+            pass
+    
+    # Final fallback: return a common word
     return "the"
 
 def generate_sentence(text, num_words=5):
     """Generate a complete sentence by predicting multiple words."""
-    if model is None:
-        return "Demo mode: model not available for sentence generation."
-    
     current_text = text.strip()
     generated_words = []
     
@@ -147,10 +172,10 @@ with col2:
     if prediction_mode == "Generate Sentence":
         num_words = st.slider("Number of words to generate:", min_value=1, max_value=20, value=5)
 
-if model is None:
-    st.warning("⚠️ Pre-trained model not available. Running in **demo mode** with heuristic predictions.")
+if model is None or tokenizer is None or max_len is None:
+    st.warning("⚠️ Pre-trained model/files not available. Running in **demo mode** with heuristic predictions.")
     st.info("""
-    **Why?** The Streamlit Cloud environment uses Python 3.14, which doesn't yet have TensorFlow wheels available.
+    **Why?** The Streamlit Cloud environment uses Python 3.14 or model files are missing.
     
     **To use the full model locally:**
     - Use Python 3.12 or 3.13
@@ -159,8 +184,9 @@ if model is None:
     - Install dependencies: `pip install -r requirements.txt`
     - Run locally: `streamlit run app.py`
     """)
-    if HAS_TENSORFLOW and IMPORT_ERROR is not None:
-        st.exception(IMPORT_ERROR)
+    if HAS_TENSORFLOW and 'IMPORT_ERROR' in globals() and IMPORT_ERROR is not None:
+        with st.expander("📋 Technical Details"):
+            st.code(str(IMPORT_ERROR))
 
 if st.button("🚀 Generate"):
     if user_input.strip() == "":
@@ -168,13 +194,13 @@ if st.button("🚀 Generate"):
     else:
         if prediction_mode == "Single Word":
             next_word = predict_next_word(user_input)
-            if model is None:
+            if model is None or tokenizer is None:
                 st.info("(demo mode — heuristic prediction)")
             st.success(f"**Predicted Next Word:** {next_word}")
         else:  # Generate Sentence
             generated_text = generate_sentence(user_input, num_words=num_words)
-            if model is None:
-                st.info("(demo mode — generation not available)")
+            if model is None or tokenizer is None:
+                st.info("(demo mode — heuristic generation)")
             st.success(f"**Generated Sentence:** {generated_text}")
 
 # ------------------------------
